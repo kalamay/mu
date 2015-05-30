@@ -1,5 +1,6 @@
 /*
  * mu.h
+ * https://github.com/kalamay/mu
  *
  * Copyright (c) 2015, Jeremy Larkin
  * All rights reserved.
