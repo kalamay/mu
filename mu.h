@@ -114,7 +114,7 @@ mu_final (const char *name)
 	return EXIT_FAILURE;
 }
 
-static void __attribute__((unused))
+static void __attribute__((noreturn))
 mu_exit (const char *name)
 {
 	exit (mu_final (name));
