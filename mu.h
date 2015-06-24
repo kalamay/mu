@@ -41,14 +41,18 @@ static size_t mu_assert_count = 0, mu_failure_count = 0;
 #define MU_CAT(n, v) MU_CAT2(n, v)
 #define MU_TMP(n) MU_CAT(mu_##n, __LINE__)
 
-#define mu_assert_msg(exp, ...) do {                      \
-	__sync_fetch_and_add (&mu_assert_count, 1);           \
-	if (!(exp)) {                                         \
-		__sync_fetch_and_add (&mu_failure_count, 1);      \
-		fprintf (stderr, "%s:%d: ", __FILE__, __LINE__ ); \
-		fprintf (stderr, __VA_ARGS__);                    \
-		fputc ('\n', stderr);                             \
-	}                                                     \
+#define mu_fail(...) do {                             \
+	__sync_fetch_and_add (&mu_failure_count, 1);      \
+	fprintf (stderr, "%s:%d: ", __FILE__, __LINE__ ); \
+	fprintf (stderr, __VA_ARGS__);                    \
+	fputc ('\n', stderr);                             \
+} while (0)
+
+#define mu_assert_msg(exp, ...) do {            \
+	__sync_fetch_and_add (&mu_assert_count, 1); \
+	if (!(exp)) {                               \
+		mu_fail (__VA_ARGS__);                  \
+	}                                           \
 } while (0);
 
 #define mu_assert(exp) mu_assert_msg(exp, "'%s' failed", #exp)
