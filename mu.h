@@ -150,12 +150,25 @@ mu_final (void)
 	const char *name = mu_name;
 	mu_set (size_t, mu_failure_count, 0);
 	mu_set (size_t, mu_assert_count, 0);
+	int rc;
 	if (fails == 0) {
-		fprintf (stderr, "%8s: passed %zu assertion%s\n", name, asserts, asserts == 1 ? "" : "s");
-		return EXIT_SUCCESS;
+		fprintf (stderr, "%8s: passed %zu assertion%s\n",
+				name,
+				asserts,
+				asserts == 1 ? "" : "s");
+		rc = EXIT_SUCCESS;
 	}
-	fprintf (stderr, "%8s: failed %zu of %zu assertion%s\n", name, fails, asserts, asserts == 1 ? "" : "s");
-	return EXIT_FAILURE;
+	else {
+		fprintf (stderr, "%8s: failed %zu of %zu assertion%s\n",
+				name,
+				fails,
+				asserts,
+				asserts == 1 ? "" : "s");
+		rc = EXIT_FAILURE;
+	}
+	fflush (stderr);
+	fflush (stdout);
+	return rc;
 }
 
 static void __attribute__((noreturn))
