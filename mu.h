@@ -63,6 +63,15 @@ static int mu_register = 0;
 #define mu_assert_msg(...) mu_cassert_msg(false, __VA_ARGS__)
 #define mu_fassert_msg(...) mu_cassert_msg(true, __VA_ARGS__)
 
+#define mu_cassert_call(c, exp) do {                              \
+	__sync_fetch_and_add (&mu_assert_count, 1);                   \
+	if ((exp) != 0) {                                             \
+		mu_cfail (c, "'%s' failed (%s)", #exp, strerror (errno)); \
+	}                                                             \
+} while (0);
+#define mu_assert_call(exp) mu_cassert_call(false, exp)
+#define mu_fassert_call(exp) mu_cassert_call(true, exp)
+
 #define mu_assert(exp) mu_assert_msg(exp, "'%s' failed", #exp)
 #define mu_fassert(exp) mu_fassert_msg(exp, "'%s' failed", #exp)
 
