@@ -2,7 +2,7 @@
  * mu.h
  * https://github.com/kalamay/mu
  *
- * Copyright (c) 2015, Jeremy Larkin
+ * Copyright (c) 2016, Jeremy Larkin
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -32,9 +32,12 @@
 #define MU_INCLUDED
 
 #include <stdlib.h>
+#include <stdint.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 
 static size_t mu_assert_count = 0, mu_failure_count = 0;
 static const char *mu_name = "test";
@@ -65,7 +68,7 @@ static int mu_register = 0;
 
 #define mu_cassert_call(c, exp) do {                              \
 	__sync_fetch_and_add (&mu_assert_count, 1);                   \
-	if ((exp) != 0) {                                             \
+	if ((exp) < 0) {                                              \
 		mu_cfail (c, "'%s' failed (%s)", #exp, strerror (errno)); \
 	}                                                             \
 } while (0);
@@ -116,7 +119,7 @@ static int mu_register = 0;
 #define mu_cassert_str(c, a, OP, b) do {                                             \
 	const char *MU_TMP(A) = (const char *)(a);                                       \
 	const char *MU_TMP(B) = (const char *)(b);                                       \
-	mu_assert_msg (MU_TMP(A) == MU_TMP(B) ||                                         \
+	mu_cassert_msg (c, MU_TMP(A) == MU_TMP(B) ||                                     \
 	    (MU_TMP(A) && MU_TMP(B) &&  0 OP strcmp (MU_TMP(A), MU_TMP(B))),             \
 	    "'%s' failed: %s=\"%s\", %s=\"%s\"", #a#OP#b, #a, MU_TMP(A), #b, MU_TMP(B)); \
 } while (0)
@@ -136,7 +139,7 @@ static int mu_register = 0;
 #define mu_cassert_ptr(c, a, OP, b) do {                                     \
 	const void *MU_TMP(A) = (a);                                             \
 	const void *MU_TMP(B) = (b);                                             \
-	mu_assert_msg(MU_TMP(A) OP MU_TMP(B),                                    \
+	mu_cassert_msg(c, MU_TMP(A) OP MU_TMP(B),                                \
 	    "'%s' failed: %s=%p, %s=%p", #a#OP#b, #a, MU_TMP(A), #b, MU_TMP(B)); \
 } while (0)
 #define mu_assert_ptr_eq(a, b) mu_cassert_ptr(false, a, ==, b)
@@ -161,18 +164,28 @@ mu_final (void)
 	mu_set (size_t, mu_assert_count, 0);
 	int rc;
 	if (fails == 0) {
+#if !defined(MU_SKIP_SUMMARY) && !defined(MU_SKIP_PASS_SUMMARY)
 		fprintf (stderr, "%8s: passed %zu assertion%s\n",
 				name,
 				asserts,
 				asserts == 1 ? "" : "s");
+#else
+		(void)name;
+		(void)asserts;
+#endif
 		rc = EXIT_SUCCESS;
 	}
 	else {
+#if !defined(MU_SKIP_SUMMARY) && !defined(MU_SKIP_FAIL_SUMMARY)
 		fprintf (stderr, "%8s: failed %zu of %zu assertion%s\n",
 				name,
 				fails,
 				asserts,
 				asserts == 1 ? "" : "s");
+#else
+		(void)name;
+		(void)asserts;
+#endif
 		rc = EXIT_FAILURE;
 	}
 	fflush (stderr);
