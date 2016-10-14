@@ -34,12 +34,13 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <inttypes.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
 
-static size_t mu_assert_count = 0, mu_failure_count = 0;
+static uintptr_t mu_assert_count = 0, mu_failure_count = 0;
 static const char *mu_name = "test";
 static int mu_register = 0;
 
@@ -78,11 +79,12 @@ static int mu_register = 0;
 #define mu_assert(exp) mu_assert_msg(exp, "'%s' failed", #exp)
 #define mu_fassert(exp) mu_fassert_msg(exp, "'%s' failed", #exp)
 
-#define mu_cassert_int(c, a, OP, b) do {                                       \
-	intmax_t MU_TMP(A) = (a);                                                  \
-	intmax_t MU_TMP(B) = (b);                                                  \
-	mu_cassert_msg(c, MU_TMP(A) OP MU_TMP(B),                                  \
-	    "'%s' failed: %s=%jd, %s=%jd", #a#OP#b, #a, MU_TMP(A), #b, MU_TMP(B)); \
+#define mu_cassert_int(c, a, OP, b) do {                 \
+	intmax_t MU_TMP(A) = (a);                            \
+	intmax_t MU_TMP(B) = (b);                            \
+	mu_cassert_msg(c, MU_TMP(A) OP MU_TMP(B),            \
+	    "'%s' failed: %s=%" PRIdMAX ", %s=%" PRIdMAX "", \
+		#a#OP#b, #a, MU_TMP(A), #b, MU_TMP(B));          \
 } while (0)
 #define mu_assert_int_eq(a, b) mu_cassert_int(false, a, ==, b)
 #define mu_fassert_int_eq(a, b) mu_cassert_int(true, a, ==, b)
@@ -97,11 +99,12 @@ static int mu_register = 0;
 #define mu_assert_int_ge(a, b) mu_cassert_int(false, a, >=, b)
 #define mu_fassert_int_ge(a, b) mu_cassert_int(true, a, >=, b)
 
-#define mu_cassert_uint(c, a, OP, b) do {                                      \
-	uintmax_t MU_TMP(A) = (a);                                                 \
-	uintmax_t MU_TMP(B) = (b);                                                 \
-	mu_cassert_msg(c, MU_TMP(A) OP MU_TMP(B),                                  \
-	    "'%s' failed: %s=%ju, %s=%ju", #a#OP#b, #a, MU_TMP(A), #b, MU_TMP(B)); \
+#define mu_cassert_uint(c, a, OP, b) do {                \
+	uintmax_t MU_TMP(A) = (a);                           \
+	uintmax_t MU_TMP(B) = (b);                           \
+	mu_cassert_msg(c, MU_TMP(A) OP MU_TMP(B),            \
+	    "'%s' failed: %s=%" PRIuMAX ", %s=%" PRIuMAX "", \
+		#a#OP#b, #a, MU_TMP(A), #b, MU_TMP(B));          \
 } while (0)
 #define mu_assert_uint_eq(a, b) mu_cassert_uint(false, a, ==, b)
 #define mu_fassert_uint_eq(a, b) mu_cassert_uint(true, a, ==, b)
@@ -116,12 +119,13 @@ static int mu_register = 0;
 #define mu_assert_uint_ge(a, b) mu_cassert_uint(false, a, >=, b)
 #define mu_fassert_uint_ge(a, b) mu_cassert_uint(true, a, >=, b)
 
-#define mu_cassert_str(c, a, OP, b) do {                                             \
-	const char *MU_TMP(A) = (const char *)(a);                                       \
-	const char *MU_TMP(B) = (const char *)(b);                                       \
-	mu_cassert_msg (c, MU_TMP(A) == MU_TMP(B) ||                                     \
-	    (MU_TMP(A) && MU_TMP(B) &&  0 OP strcmp (MU_TMP(A), MU_TMP(B))),             \
-	    "'%s' failed: %s=\"%s\", %s=\"%s\"", #a#OP#b, #a, MU_TMP(A), #b, MU_TMP(B)); \
+#define mu_cassert_str(c, a, OP, b) do {                                \
+	const char *MU_TMP(A) = (const char *)(a);                          \
+	const char *MU_TMP(B) = (const char *)(b);                          \
+	mu_cassert_msg (c, MU_TMP(A) == MU_TMP(B) ||                        \
+	    (MU_TMP(A) && MU_TMP(B) && 0 OP strcmp (MU_TMP(A), MU_TMP(B))), \
+	    "'%s' failed: %s=\"%s\", %s=\"%s\"",                            \
+		#a#OP#b, #a, MU_TMP(A), #b, MU_TMP(B));                         \
 } while (0)
 #define mu_assert_str_eq(a, b) mu_cassert_str(false, a, ==, b)
 #define mu_fassert_str_eq(a, b) mu_cassert_str(true, a, ==, b)
@@ -158,14 +162,14 @@ static int
 mu_final (void)
 {
 	__sync_synchronize ();
-	size_t fails = mu_failure_count, asserts = mu_assert_count;
+	uintptr_t fails = mu_failure_count, asserts = mu_assert_count;
 	const char *name = mu_name;
-	mu_set (size_t, mu_failure_count, 0);
-	mu_set (size_t, mu_assert_count, 0);
+	mu_set (uintptr_t, mu_failure_count, 0);
+	mu_set (uintptr_t, mu_assert_count, 0);
 	int rc;
 	if (fails == 0) {
 #if !defined(MU_SKIP_SUMMARY) && !defined(MU_SKIP_PASS_SUMMARY)
-		fprintf (stderr, "%8s: passed %zu assertion%s\n",
+		fprintf (stderr, "%8s: passed %" PRIuPTR " assertion%s\n",
 				name,
 				asserts,
 				asserts == 1 ? "" : "s");
@@ -177,7 +181,7 @@ mu_final (void)
 	}
 	else {
 #if !defined(MU_SKIP_SUMMARY) && !defined(MU_SKIP_FAIL_SUMMARY)
-		fprintf (stderr, "%8s: failed %zu of %zu assertion%s\n",
+		fprintf (stderr, "%8s: failed %" PRIuPTR " of %" PRIuPTR " assertion%s\n",
 				name,
 				fails,
 				asserts,
@@ -204,8 +208,8 @@ mu_init (const char *name)
 {
 	__sync_synchronize ();
 	mu_set (const char *, mu_name, name);
-	mu_set (size_t, mu_failure_count, 0);
-	mu_set (size_t, mu_assert_count, 0);
+	mu_set (uintptr_t, mu_failure_count, 0);
+	mu_set (uintptr_t, mu_assert_count, 0);
 	if (__sync_fetch_and_add (&mu_register, 1) == 0) {
 		atexit (mu_exit);
 	}
