@@ -38,11 +38,13 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <errno.h>
 
 static uintptr_t mu_assert_count = 0, mu_failure_count = 0;
 static const char *mu_name = "test";
 static int mu_register = 0;
+static uintptr_t *mu_global = NULL;
 
 #define MU_CAT2(n, v) n##v
 #define MU_CAT(n, v) MU_CAT2(n, v)
@@ -163,6 +165,11 @@ mu_final (void)
 {
 	__sync_synchronize ();
 	uintptr_t fails = mu_failure_count, asserts = mu_assert_count;
+	if (mu_global != NULL) {
+		mu_global[0] = fails;
+		mu_global[1] = asserts;
+		return 0;
+	}
 	const char *name = mu_name;
 	mu_set (uintptr_t, mu_failure_count, 0);
 	mu_set (uintptr_t, mu_assert_count, 0);
@@ -212,6 +219,33 @@ mu_init (const char *name)
 	mu_set (uintptr_t, mu_assert_count, 0);
 	if (__sync_fetch_and_add (&mu_register, 1) == 0) {
 		atexit (mu_exit);
+	}
+}
+
+static void
+mu_test (void (*fn) (void))
+{
+	mu_global = mmap (NULL, 4096,
+			PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
+	if (mu_global == MAP_FAILED) {
+		fprintf (stderr, "failed mmap: %s\n", strerror (errno));
+		exit (1);
+	}
+
+	int rc = fork ();
+	if (rc < 0) {
+		fprintf (stderr, "failed fork: %s\n", strerror (errno));
+		exit (1);
+	}
+	if (rc == 0) {
+		fn ();
+	}
+	else {
+		waitpid (rc, NULL, 0);
+		mu_set (uintptr_t, mu_failure_count, mu_global[0]);
+		mu_set (uintptr_t, mu_assert_count, mu_global[1]);
+		munmap (mu_global, 4096);
+		mu_global = NULL;
 	}
 }
 
