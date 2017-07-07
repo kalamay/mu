@@ -2,7 +2,7 @@
  * mu.h
  * https://github.com/kalamay/mu
  *
- * Copyright (c) 2016, Jeremy Larkin
+ * Copyright (c) 2017, Jeremy Larkin
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -41,143 +41,115 @@
 #include <sys/mman.h>
 #include <errno.h>
 
-static uintptr_t mu_assert_count = 0, mu_failure_count = 0;
+struct mu_counts {
+	uintptr_t asserts, failures;
+};
+
 static const char *mu_name = "test";
-static int mu_register = 0;
-static uintptr_t *mu_global = NULL;
+static int mu_register;
+static bool mu_main = true, mu_fork = true, mu_tty;
+static const char *mu_skip, *mu_run;
+static struct mu_counts mu_counts_start, *mu_counts = &mu_counts_start;
+
+static void mu_noop(void) {}
+static void (*mu_teardown)(void) = mu_noop;
 
 #define MU_CAT2(n, v) n##v
 #define MU_CAT(n, v) MU_CAT2(n, v)
-#define MU_TMP(n) MU_CAT(mu_##n, __LINE__)
+#define MU_TMP(n) MU_CAT(mu_tmp_##n, __LINE__)
+#define MU_STR2(n) #n
+#define MU_STR(n) MU_STR2(n)
 
-#define mu_cfail(c, ...) do {                         \
-	__sync_fetch_and_add (&mu_failure_count, 1);      \
-	fprintf (stderr, "%s:%d: ", __FILE__, __LINE__ ); \
-	fprintf (stderr, __VA_ARGS__);                    \
-	fputc ('\n', stderr);                             \
-	if ((c)) { mu_exit (); }                          \
-} while (0)
-#define mu_fail(...) mu_cfail(false, __VA_ARGS__)
-#define mu_ffail(...) mu_cfail(true, __VA_ARGS__)
-
-#define mu_cassert_msg(c, exp, ...) do {        \
-	__sync_fetch_and_add (&mu_assert_count, 1); \
-	if (!(exp)) {                               \
-		mu_cfail (c, __VA_ARGS__);              \
-	}                                           \
+#define mu_assert_msg(exp, ...) do { \
+	__sync_fetch_and_add (&mu_counts->asserts, 1); \
+	if (!(exp)) { \
+		__sync_fetch_and_add (&mu_counts->failures, 1); \
+		fprintf (stderr, __FILE__ ":" MU_STR(__LINE__) " " __VA_ARGS__); \
+		exit (0); \
+	} \
 } while (0);
-#define mu_assert_msg(...) mu_cassert_msg(false, __VA_ARGS__)
-#define mu_fassert_msg(...) mu_cassert_msg(true, __VA_ARGS__)
 
-#define mu_cassert_call(c, exp) do {                              \
-	__sync_fetch_and_add (&mu_assert_count, 1);                   \
-	if ((exp) < 0) {                                              \
-		mu_cfail (c, "'%s' failed (%s)", #exp, strerror (errno)); \
-	}                                                             \
-} while (0);
-#define mu_assert_call(exp) mu_cassert_call(false, exp)
-#define mu_fassert_call(exp) mu_cassert_call(true, exp)
+#define mu_assert_call(exp) \
+	mu_assert_msg ((exp) >= 0, "'%s' failed (%s)\n", #exp, strerror (errno));
 
-#define mu_assert(exp) mu_assert_msg(exp, "'%s' failed", #exp)
-#define mu_fassert(exp) mu_fassert_msg(exp, "'%s' failed", #exp)
+#define mu_assert(exp) mu_assert_msg(exp, "'%s' failed\n", #exp)
 
-#define mu_cassert_int(c, a, OP, b) do {                 \
-	intmax_t MU_TMP(A) = (a);                            \
-	intmax_t MU_TMP(B) = (b);                            \
-	mu_cassert_msg(c, MU_TMP(A) OP MU_TMP(B),            \
-	    "'%s' failed: %s=%" PRIdMAX ", %s=%" PRIdMAX "", \
-		#a#OP#b, #a, MU_TMP(A), #b, MU_TMP(B));          \
+#define mu_assert_int(a, OP, b) do { \
+	intmax_t MU_TMP(A) = (a); \
+	intmax_t MU_TMP(B) = (b); \
+	mu_assert_msg(MU_TMP(A) OP MU_TMP(B), \
+	    "'%s' failed: %s=%" PRIdMAX ", %s=%" PRIdMAX "\n", \
+		#a#OP#b, #a, MU_TMP(A), #b, MU_TMP(B)); \
 } while (0)
-#define mu_assert_int_eq(a, b) mu_cassert_int(false, a, ==, b)
-#define mu_fassert_int_eq(a, b) mu_cassert_int(true, a, ==, b)
-#define mu_assert_int_ne(a, b) mu_cassert_int(false, a, !=, b)
-#define mu_fassert_int_ne(a, b) mu_cassert_int(true, a, !=, b)
-#define mu_assert_int_lt(a, b) mu_cassert_int(false, a, <,  b)
-#define mu_fassert_int_lt(a, b) mu_cassert_int(true, a, <,  b)
-#define mu_assert_int_le(a, b) mu_cassert_int(false, a, <=, b)
-#define mu_fassert_int_le(a, b) mu_cassert_int(true, a, <=, b)
-#define mu_assert_int_gt(a, b) mu_cassert_int(false, a, >,  b)
-#define mu_fassert_int_gt(a, b) mu_cassert_int(true, a, >,  b)
-#define mu_assert_int_ge(a, b) mu_cassert_int(false, a, >=, b)
-#define mu_fassert_int_ge(a, b) mu_cassert_int(true, a, >=, b)
+#define mu_assert_int_eq(a, b) mu_assert_int(a, ==, b)
+#define mu_assert_int_ne(a, b) mu_assert_int(a, !=, b)
+#define mu_assert_int_lt(a, b) mu_assert_int(a, <,  b)
+#define mu_assert_int_le(a, b) mu_assert_int(a, <=, b)
+#define mu_assert_int_gt(a, b) mu_assert_int(a, >,  b)
+#define mu_assert_int_ge(a, b) mu_assert_int(a, >=, b)
 
-#define mu_cassert_uint(c, a, OP, b) do {                \
-	uintmax_t MU_TMP(A) = (a);                           \
-	uintmax_t MU_TMP(B) = (b);                           \
-	mu_cassert_msg(c, MU_TMP(A) OP MU_TMP(B),            \
-	    "'%s' failed: %s=%" PRIuMAX ", %s=%" PRIuMAX "", \
-		#a#OP#b, #a, MU_TMP(A), #b, MU_TMP(B));          \
+#define mu_assert_uint(a, OP, b) do { \
+	uintmax_t MU_TMP(A) = (a); \
+	uintmax_t MU_TMP(B) = (b); \
+	mu_assert_msg(MU_TMP(A) OP MU_TMP(B), \
+	    "'%s' failed: %s=%" PRIuMAX ", %s=%" PRIuMAX "\n", \
+		#a#OP#b, #a, MU_TMP(A), #b, MU_TMP(B)); \
 } while (0)
-#define mu_assert_uint_eq(a, b) mu_cassert_uint(false, a, ==, b)
-#define mu_fassert_uint_eq(a, b) mu_cassert_uint(true, a, ==, b)
-#define mu_assert_uint_ne(a, b) mu_cassert_uint(false, a, !=, b)
-#define mu_fassert_uint_ne(a, b) mu_cassert_uint(true, a, !=, b)
-#define mu_assert_uint_lt(a, b) mu_cassert_uint(false, a, <,  b)
-#define mu_fassert_uint_lt(a, b) mu_cassert_uint(true, a, <,  b)
-#define mu_assert_uint_le(a, b) mu_cassert_uint(false, a, <=, b)
-#define mu_fassert_uint_le(a, b) mu_cassert_uint(true, a, <=, b)
-#define mu_assert_uint_gt(a, b) mu_cassert_uint(false, a, >,  b)
-#define mu_fassert_uint_gt(a, b) mu_cassert_uint(true, a, >,  b)
-#define mu_assert_uint_ge(a, b) mu_cassert_uint(false, a, >=, b)
-#define mu_fassert_uint_ge(a, b) mu_cassert_uint(true, a, >=, b)
+#define mu_assert_uint_eq(a, b) mu_assert_uint(a, ==, b)
+#define mu_assert_uint_ne(a, b) mu_assert_uint(a, !=, b)
+#define mu_assert_uint_lt(a, b) mu_assert_uint(a, <,  b)
+#define mu_assert_uint_le(a, b) mu_assert_uint(a, <=, b)
+#define mu_assert_uint_gt(a, b) mu_assert_uint(a, >,  b)
+#define mu_assert_uint_ge(a, b) mu_assert_uint(a, >=, b)
 
-#define mu_cassert_str(c, a, OP, b) do {                                \
-	const char *MU_TMP(A) = (const char *)(a);                          \
-	const char *MU_TMP(B) = (const char *)(b);                          \
-	mu_cassert_msg (c, MU_TMP(A) == MU_TMP(B) ||                        \
+#define mu_assert_str(a, OP, b) do { \
+	const char *MU_TMP(A) = (const char *)(a); \
+	const char *MU_TMP(B) = (const char *)(b); \
+	mu_assert_msg (MU_TMP(A) == MU_TMP(B) || \
 	    (MU_TMP(A) && MU_TMP(B) && 0 OP strcmp (MU_TMP(A), MU_TMP(B))), \
-	    "'%s' failed: %s=\"%s\", %s=\"%s\"",                            \
-		#a#OP#b, #a, MU_TMP(A), #b, MU_TMP(B));                         \
+	    "'%s' failed: %s=\"%s\", %s=\"%s\"\n", \
+		#a#OP#b, #a, MU_TMP(A), #b, MU_TMP(B)); \
 } while (0)
-#define mu_assert_str_eq(a, b) mu_cassert_str(false, a, ==, b)
-#define mu_fassert_str_eq(a, b) mu_cassert_str(true, a, ==, b)
-#define mu_assert_str_ne(a, b) mu_cassert_str(false, a, !=, b)
-#define mu_fassert_str_ne(a, b) mu_cassert_str(true, a, !=, b)
-#define mu_assert_str_lt(a, b) mu_cassert_str(false, a, <,  b)
-#define mu_fassert_str_lt(a, b) mu_cassert_str(true, a, <,  b)
-#define mu_assert_str_le(a, b) mu_cassert_str(false, a, <=, b)
-#define mu_fassert_str_le(a, b) mu_cassert_str(true, a, <=, b)
-#define mu_assert_str_gt(a, b) mu_cassert_str(false, a, >,  b)
-#define mu_fassert_str_gt(a, b) mu_cassert_str(true, a, >,  b)
-#define mu_assert_str_ge(a, b) mu_cassert_str(false, a, >=, b)
-#define mu_fassert_str_ge(a, b) mu_cassert_str(true, a, >=, b)
+#define mu_assert_str_eq(a, b) mu_assert_str(a, ==, b)
+#define mu_assert_str_ne(a, b) mu_assert_str(a, !=, b)
+#define mu_assert_str_lt(a, b) mu_assert_str(a, <,  b)
+#define mu_assert_str_le(a, b) mu_assert_str(a, <=, b)
+#define mu_assert_str_gt(a, b) mu_assert_str(a, >,  b)
+#define mu_assert_str_ge(a, b) mu_assert_str(a, >=, b)
 
-#define mu_cassert_ptr(c, a, OP, b) do {                                     \
-	const void *MU_TMP(A) = (a);                                             \
-	const void *MU_TMP(B) = (b);                                             \
-	mu_cassert_msg(c, MU_TMP(A) OP MU_TMP(B),                                \
-	    "'%s' failed: %s=%p, %s=%p", #a#OP#b, #a, MU_TMP(A), #b, MU_TMP(B)); \
+#define mu_assert_ptr(a, OP, b) do { \
+	const void *MU_TMP(A) = (a); \
+	const void *MU_TMP(B) = (b); \
+	mu_assert_msg(MU_TMP(A) OP MU_TMP(B), \
+	    "'%s' failed: %s=%p, %s=%p\n", #a#OP#b, #a, MU_TMP(A), #b, MU_TMP(B)); \
 } while (0)
-#define mu_assert_ptr_eq(a, b) mu_cassert_ptr(false, a, ==, b)
-#define mu_fassert_ptr_eq(a, b) mu_cassert_ptr(true, a, ==, b)
-#define mu_assert_ptr_ne(a, b) mu_cassert_ptr(false, a, !=, b)
-#define mu_fassert_ptr_ne(a, b) mu_cassert_ptr(true, a, !=, b)
+#define mu_assert_ptr_eq(a, b) mu_assert_ptr(a, ==, b)
+#define mu_assert_ptr_ne(a, b) mu_assert_ptr(a, !=, b)
 	
-#define mu_set(T, var, new) do {                              \
-	T old;                                                    \
-	do {                                                      \
-		old = var;                                            \
+#define mu_set(T, var, new) do { \
+	T old; \
+	do { \
+		old = var; \
 	} while (!__sync_bool_compare_and_swap (&var, old, new)); \
 } while (0)
 
 static int
 mu_final (void)
 {
+	static const char *passed[2] = { "passed", "\x1B[1;32mpassed\x1B[0m" };
+	static const char *failed[2] = { "failed", "\x1B[1;31mfailed\x1B[0m" };
+
 	__sync_synchronize ();
-	uintptr_t fails = mu_failure_count, asserts = mu_assert_count;
-	if (mu_global != NULL) {
-		mu_global[0] = fails;
-		mu_global[1] = asserts;
-		return 0;
-	}
+	uintptr_t asserts = mu_counts->asserts, fails = mu_counts->failures;
 	const char *name = mu_name;
-	mu_set (uintptr_t, mu_failure_count, 0);
-	mu_set (uintptr_t, mu_assert_count, 0);
+	mu_set (uintptr_t, mu_counts->asserts, 0);
+	mu_set (uintptr_t, mu_counts->failures, 0);
 	int rc;
 	if (fails == 0) {
 #if !defined(MU_SKIP_SUMMARY) && !defined(MU_SKIP_PASS_SUMMARY)
-		fprintf (stderr, "%8s: passed %" PRIuPTR " assertion%s\n",
+		fprintf (stderr, "%8s: %s %" PRIuPTR " assertion%s\n",
 				name,
+				passed[mu_tty],
 				asserts,
 				asserts == 1 ? "" : "s");
 #else
@@ -188,8 +160,9 @@ mu_final (void)
 	}
 	else {
 #if !defined(MU_SKIP_SUMMARY) && !defined(MU_SKIP_FAIL_SUMMARY)
-		fprintf (stderr, "%8s: failed %" PRIuPTR " of %" PRIuPTR " assertion%s\n",
+		fprintf (stderr, "%8s: %s %" PRIuPTR " of %" PRIuPTR " assertion%s\n",
 				name,
+				failed[mu_tty],
 				fails,
 				asserts,
 				asserts == 1 ? "" : "s");
@@ -204,48 +177,100 @@ mu_final (void)
 	return rc;
 }
 
-static void __attribute__((noreturn))
+static void
 mu_exit (void)
 {
-	_exit (mu_final ());
+	if (mu_main) { _exit (mu_final ()); }
 }
 
 static void
-mu_init (const char *name)
+mu_setup (void)
 {
-	__sync_synchronize ();
-	mu_set (const char *, mu_name, name);
-	mu_set (uintptr_t, mu_failure_count, 0);
-	mu_set (uintptr_t, mu_assert_count, 0);
-	if (__sync_fetch_and_add (&mu_register, 1) == 0) {
+	if (__sync_bool_compare_and_swap (&mu_register, 0, 1)) {
+		mu_counts = mmap (NULL, 4096,
+				PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
+		if (mu_counts == MAP_FAILED) {
+			fprintf (stderr, "failed mmap: %s\n", strerror (errno));
+			exit (1);
+		}
+		if (getenv ("MU_NOFORK") != NULL) { mu_fork = false; }
+		mu_skip = getenv ("MU_SKIP");
+		mu_run = getenv ("MU_RUN");
+		mu_tty = isatty (STDERR_FILENO);
+		memcpy (mu_counts, &mu_counts_start, sizeof (mu_counts_start));
 		atexit (mu_exit);
 	}
 }
 
 static void
-mu_test (void (*fn) (void))
+mu_init (const char *name)
 {
-	mu_global = mmap (NULL, 4096,
-			PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
-	if (mu_global == MAP_FAILED) {
-		fprintf (stderr, "failed mmap: %s\n", strerror (errno));
-		exit (1);
-	}
+	mu_setup ();
+	mu_set (const char *, mu_name, name);
+	mu_set (uintptr_t, mu_counts->asserts, 0);
+	mu_set (uintptr_t, mu_counts->failures, 0);
+}
 
-	int rc = fork ();
-	if (rc < 0) {
-		fprintf (stderr, "failed fork: %s\n", strerror (errno));
-		exit (1);
-	}
-	if (rc == 0) {
+#define mu_run(fn) mu__run(__FILE__, __LINE__, #fn, fn)
+
+static bool
+mu__match (const char *list, const char *name)
+{
+	char *m = strstr (list, name);
+	size_t n = strlen (name);
+	return m && (m == list || m[-1] == ':') && (m[n] == '\0' || m[n] == ':');
+}
+
+static void __attribute__ ((unused))
+mu__run (const char *file, int line, const char *fname, void (*fn) (void))
+{
+	mu_setup ();
+
+	if (mu_skip != NULL && mu__match (mu_skip, fname)) { return; }
+	if (mu_run != NULL && !mu__match (mu_run, fname)) { return; }
+	if (!mu_fork) {
 		fn ();
+		mu_teardown ();
+		mu_teardown = mu_noop;
 	}
 	else {
-		waitpid (rc, NULL, 0);
-		mu_set (uintptr_t, mu_failure_count, mu_global[0]);
-		mu_set (uintptr_t, mu_assert_count, mu_global[1]);
-		munmap (mu_global, 4096);
-		mu_global = NULL;
+		int stat = 0, exitstat = 0, termsig = 0;
+		pid_t pid = fork ();
+		if (pid < 0) {
+			fprintf (stderr, "%s:%d: %s failed fork '%s'\n",
+					file, line, fname, strerror (errno));
+			exit (1);
+		}
+		if (pid == 0) {
+			mu_main = false;
+			fn ();
+			mu_teardown ();
+			mu_teardown = mu_noop;
+			exit (0);
+		}
+		else {
+			do {
+				pid_t p = waitpid (pid, &stat, 0);
+				if (p >= 0) { break; }
+				if (p < 0 && errno != EINTR) {
+					fprintf (stderr, "%s:%d: %s failed waitpid '%s'\n",
+							file, line, fname, strerror (errno));
+					exit (1);
+				}
+			} while (1);
+		}
+		if (WIFEXITED (stat) && (exitstat = WEXITSTATUS (stat))) {
+			__sync_fetch_and_add (&mu_counts->asserts, 1);
+			__sync_fetch_and_add (&mu_counts->failures, 1);
+			fprintf (stderr, "%s:%d: %s non-zero exit (%d)\n",
+					file, line, fname, exitstat);
+		}
+		if (WIFSIGNALED (stat) && (termsig = WTERMSIG (stat))) {
+			__sync_fetch_and_add (&mu_counts->asserts, 1);
+			__sync_fetch_and_add (&mu_counts->failures, 1);
+			fprintf (stderr, "%s:%d: %s recieved signal (%d)\n",
+					file, line, fname, termsig);
+		}
 	}
 }
 
