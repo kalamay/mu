@@ -54,6 +54,19 @@ static struct mu_counts mu_counts_start, *mu_counts = &mu_counts_start;
 static void mu_noop(void) {}
 static void (*mu_teardown)(void) = mu_noop;
 
+static void
+mu_count_assert (void)
+{
+	__sync_fetch_and_add (&mu_counts->asserts, 1);
+}
+
+static void
+mu_count_failure (void)
+{
+	mu_count_assert ();
+	__sync_fetch_and_add (&mu_counts->failures, 1);
+}
+
 #define MU_CAT2(n, v) n##v
 #define MU_CAT(n, v) MU_CAT2(n, v)
 #define MU_TMP(n) MU_CAT(mu_tmp_##n, __LINE__)
@@ -61,19 +74,16 @@ static void (*mu_teardown)(void) = mu_noop;
 #define MU_STR(n) MU_STR2(n)
 
 #define mu_fail(...) do { \
-	__sync_fetch_and_add (&mu_counts->asserts, 1); \
-	__sync_fetch_and_add (&mu_counts->failures, 1); \
+	mu_count_failure (); \
 	fprintf (stderr, __FILE__ ":" MU_STR(__LINE__) " " __VA_ARGS__); \
 	exit (0); \
 } while (0);
 
 #define mu_assert_msg(exp, ...) do { \
-	__sync_fetch_and_add (&mu_counts->asserts, 1); \
 	if (!(exp)) { \
-		__sync_fetch_and_add (&mu_counts->failures, 1); \
-		fprintf (stderr, __FILE__ ":" MU_STR(__LINE__) " " __VA_ARGS__); \
-		exit (0); \
+		mu_fail(__VA_ARGS__); \
 	} \
+	mu_count_assert (); \
 } while (0);
 
 #define mu_assert_call(exp) \
@@ -273,14 +283,12 @@ mu__run (const char *file, int line, const char *fname, void (*fn) (void))
 			} while (1);
 		}
 		if (WIFEXITED (stat) && (exitstat = WEXITSTATUS (stat))) {
-			__sync_fetch_and_add (&mu_counts->asserts, 1);
-			__sync_fetch_and_add (&mu_counts->failures, 1);
+			mu_count_failure ();
 			fprintf (stderr, "%s:%d: %s non-zero exit (%d)\n",
 					file, line, fname, exitstat);
 		}
 		if (WIFSIGNALED (stat) && (termsig = WTERMSIG (stat))) {
-			__sync_fetch_and_add (&mu_counts->asserts, 1);
-			__sync_fetch_and_add (&mu_counts->failures, 1);
+			mu_count_failure ();
 			fprintf (stderr, "%s:%d: %s recieved signal (%d)\n",
 					file, line, fname, termsig);
 		}
