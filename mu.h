@@ -46,8 +46,8 @@ struct mu_counts {
 };
 
 static const char *mu_name = "test";
-static int mu_register;
-static bool mu_main = true, mu_fork = true, mu_tty;
+static int mu_register, mu_main = -1;
+static bool mu_fork = true, mu_tty;
 static const char *mu_skip, *mu_run;
 static struct mu_counts mu_counts_start, *mu_counts = &mu_counts_start;
 
@@ -184,16 +184,23 @@ mu_final (void)
 	return rc;
 }
 
+static bool
+mu_ismain(void)
+{
+	return mu_main == getpid();
+}
+
 static void
 mu_exit (void)
 {
-	if (mu_main) { _exit (mu_final ()); }
+	if (mu_ismain()) { _exit (mu_final ()); }
 }
 
 static void
 mu_setup (void)
 {
 	if (__sync_bool_compare_and_swap (&mu_register, 0, 1)) {
+		mu_main = getpid();
 		mu_counts = mmap (NULL, 4096,
 				PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
 		if (mu_counts == MAP_FAILED) {
@@ -249,7 +256,6 @@ mu__run (const char *file, int line, const char *fname, void (*fn) (void))
 			exit (1);
 		}
 		if (pid == 0) {
-			mu_main = false;
 			fn ();
 			mu_teardown ();
 			mu_teardown = mu_noop;
