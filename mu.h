@@ -50,7 +50,7 @@ struct mu_counts {
 };
 
 static const char *mu_name = "test";
-static int mu_register, mu_main = -1;
+static int mu_register, mu_main_pid = -1, mu_test_pid = -1;
 static bool mu_fork = true, mu_tty;
 static const char *mu_skip, *mu_run;
 static struct mu_counts mu_counts_start, *mu_counts = &mu_counts_start;
@@ -202,7 +202,13 @@ mu_final (void)
 static bool
 mu_ismain(void)
 {
-	return mu_main == getpid();
+	return mu_main_pid == getpid();
+}
+
+static bool
+mu_istest(void)
+{
+	return mu_test_pid == getpid();
 }
 
 static void
@@ -215,7 +221,7 @@ static void
 mu_setup (void)
 {
 	if (__sync_bool_compare_and_swap (&mu_register, 0, 1)) {
-		mu_main = getpid();
+		mu_main_pid = getpid();
 		mu_counts = mmap (NULL, 4096,
 				PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
 		if (mu_counts == MAP_FAILED) {
@@ -251,6 +257,17 @@ mu__match (const char *list, const char *name)
 }
 
 static void __attribute__ ((unused))
+mu__invoke (void (*fn) (void))
+{
+	mu_test_pid = getpid ();
+	fn ();
+	if (mu_istest ()) {
+		mu_teardown ();
+		mu_teardown = mu_noop;
+	}
+}
+
+static void __attribute__ ((unused))
 mu__run (const char *file, int line, const char *fname, void (*fn) (void))
 {
 	mu_setup ();
@@ -258,11 +275,7 @@ mu__run (const char *file, int line, const char *fname, void (*fn) (void))
 	if (mu_skip != NULL && mu__match (mu_skip, fname)) { return; }
 	if (mu_run != NULL && !mu__match (mu_run, fname)) { return; }
 	if (!mu_fork) {
-		fn ();
-		if (mu_ismain()) {
-			mu_teardown ();
-			mu_teardown = mu_noop;
-		}
+		mu__invoke (fn);
 	}
 	else {
 		int stat = 0, exitstat = 0, termsig = 0;
@@ -273,11 +286,7 @@ mu__run (const char *file, int line, const char *fname, void (*fn) (void))
 			exit (1);
 		}
 		if (pid == 0) {
-			fn ();
-			if (mu_ismain()) {
-				mu_teardown ();
-				mu_teardown = mu_noop;
-			}
+			mu__invoke (fn);
 			exit (0);
 		}
 		else {
