@@ -53,4 +53,5 @@ $ MU_SKIP=test_bad_math ./test-math
 | `MU_SKIP_SUMMARY` | Do not print any pass/fail summary mesages. |
 | `MU_SKIP_PASS_SUMMARY` | Do not print any pass summary mesages. |
 | `MU_SKIP_FAIL_SUMMARY` | Do not print any fail summary mesages. |
+| `MU_OUT` | Output `FILE *` object. Defaults to `stderr`. |
 
