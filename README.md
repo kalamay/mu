@@ -43,6 +43,7 @@ $ MU_SKIP=test_bad_math ./test-math
 | Option | Description |
 | --- | --- |
 | `MU_NOFORK=1` | Do not fork when running test functions. Without forking, the first error will halt the test. |
+| `MU_VERBOSE=1` | Print verbose information about the test being run. |
 | `MU_SKIP=name[:name]` | Do not run tests in the list. |
 | `MU_RUN=name[:name]` | Only run tests in the list. |
 
