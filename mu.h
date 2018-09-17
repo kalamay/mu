@@ -2,7 +2,7 @@
  * mu.h
  * https://github.com/kalamay/mu
  *
- * Copyright (c) 2017, Jeremy Larkin
+ * Copyright (c) 2018, Jeremy Larkin
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -31,6 +31,10 @@
 #ifndef MU_INCLUDED
 #define MU_INCLUDED
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -44,6 +48,19 @@
 
 #ifndef MU_OUT
 # define MU_OUT stderr
+#endif
+
+#ifndef MU_NO_FLT
+# include <math.h>
+# ifndef MU_EPSILON
+#  define MU_EPSILON 0.00001
+# endif
+# ifndef MU_FLT_CLOSE
+#  define MU_FLT_CLOSE(u, v) (u == v || ( \
+	fabs((u)-(v)) <= MU_EPSILON * fabs(u) && \
+	fabs((u)-(v)) <= MU_EPSILON * fabs(v) \
+))
+# endif
 #endif
 
 struct mu_counts {
@@ -123,6 +140,23 @@ mu_count_failure (void)
 #define mu_assert_uint_le(a, b) mu_assert_uint(a, <=, b)
 #define mu_assert_uint_gt(a, b) mu_assert_uint(a, >,  b)
 #define mu_assert_uint_ge(a, b) mu_assert_uint(a, >=, b)
+
+#ifdef MU_FLT_CLOSE
+#define mu_assert_flt_eq(a, b) do { \
+	double MU_TMP(A) = (a); \
+	double MU_TMP(B) = (b); \
+	mu_assert_msg(MU_FLT_CLOSE(MU_TMP(A), MU_TMP(B)), \
+	    "'%s==%s' failed: %s=%f, %s=%f\n", \
+		#a, #b, #a, MU_TMP(A), #b, MU_TMP(B)); \
+} while (0)
+#define mu_assert_flt_ne(a, b) do { \
+	double MU_TMP(A) = (a); \
+	double MU_TMP(B) = (b); \
+	mu_assert_msg(!MU_FLT_CLOSE(MU_TMP(A), MU_TMP(B)), \
+	    "'%s!=%s' failed: %s=%f, %s=%f\n", \
+		#a, #b, #a, MU_TMP(A), #b, MU_TMP(B)); \
+} while (0)
+#endif
 
 #define mu_assert_str(a, OP, b) do { \
 	const char *MU_TMP(A) = (const char *)(a); \
@@ -223,7 +257,7 @@ mu_setup (void)
 {
 	if (__sync_bool_compare_and_swap (&mu_register, 0, 1)) {
 		mu_main_pid = getpid();
-		mu_counts = mmap (NULL, 4096,
+		mu_counts = (struct mu_counts *)mmap (NULL, 4096,
 				PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
 		if (mu_counts == MAP_FAILED) {
 			fprintf (MU_OUT, "failed mmap: %s\n", strerror (errno));
@@ -255,7 +289,7 @@ mu_init (const char *name)
 static bool
 mu__match (const char *list, const char *name)
 {
-	char *m = strstr (list, name);
+	const char *m = strstr (list, name);
 	size_t n = strlen (name);
 	return m && (m == list || m[-1] == ':') && (m[n] == '\0' || m[n] == ':');
 }
@@ -319,6 +353,10 @@ mu__run (const char *file, int line, const char *fname, void (*fn) (void))
 		}
 	}
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
 
