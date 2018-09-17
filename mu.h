@@ -181,6 +181,10 @@ mu_count_failure (void)
 } while (0)
 #define mu_assert_ptr_eq(a, b) mu_assert_ptr(a, ==, b)
 #define mu_assert_ptr_ne(a, b) mu_assert_ptr(a, !=, b)
+#define mu_assert_ptr_lt(a, b) mu_assert_ptr(a, <,  b)
+#define mu_assert_ptr_le(a, b) mu_assert_ptr(a, <=, b)
+#define mu_assert_ptr_gt(a, b) mu_assert_ptr(a, >,  b)
+#define mu_assert_ptr_ge(a, b) mu_assert_ptr(a, >=, b)
 	
 #define mu_set(T, var, new) do { \
 	T old; \
